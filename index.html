@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2f4a57">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>P5P2 Stop Alarm</title>
+
+<style>
+/* Layout: one narrow column like a line-side control panel; big touch targets for gloves */
+:root{
+  --bg:#eef1f2; --panel:#ffffff; --ink:#1b2326; --muted:#5d6a6f; --line:#cfd7da;
+  --steel:#2f4a57; --steel-ink:#ffffff; --chip:#e3e9eb;
+  --warn:#c77700; --warn-bg:#fff3df; --stop:#c62828; --stop-ink:#ffffff; --ok:#2e7d4f;
+  --f-body:"BIZ UDPGothic","Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+  --f-num:"Saira Condensed","Arial Narrow",system-ui,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#12181b; --panel:#1b2428; --ink:#e7eef0; --muted:#97a6ab; --line:#2e3b40;
+  --steel:#5d8799; --steel-ink:#0d1316; --chip:#243136;
+  --warn:#f0a43a; --warn-bg:#2d2414; --stop:#e04848; --stop-ink:#ffffff; --ok:#5fbf86; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12181b; --panel:#1b2428; --ink:#e7eef0; --muted:#97a6ab; --line:#2e3b40;
+  --steel:#5d8799; --steel-ink:#0d1316; --chip:#243136;
+  --warn:#f0a43a; --warn-bg:#2d2414; --stop:#e04848; --stop-ink:#ffffff; --ok:#5fbf86; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.5}
+.wrap{max-width:560px;margin:0 auto;padding-block:16px 40px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:flex;flex-direction:column;gap:14px}
+header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+h1{font-family:var(--f-num);font-weight:700;font-size:30px;letter-spacing:.02em;margin:0;text-wrap:balance}
+h1 small{font-family:var(--f-body);font-size:14px;font-weight:400;color:var(--muted);margin-left:6px}
+.clock{font-family:var(--f-num);font-size:22px;font-variant-numeric:tabular-nums;color:var(--muted)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.label{font-size:13px;color:var(--muted);letter-spacing:.04em}
+ruby rt{font-size:.55em;color:var(--muted)}
+
+.conds{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.cond{font:inherit;font-weight:700;font-size:18px;min-height:56px;border-radius:8px;border:2px solid var(--line);
+  background:var(--chip);color:var(--ink);cursor:pointer}
+.cond[aria-pressed="true"]{background:var(--steel);border-color:var(--steel);color:var(--steel-ink)}
+.cond:focus-visible,.btn:focus-visible{outline:3px solid var(--warn);outline-offset:2px}
+
+.load{font:inherit;font-weight:700;font-size:24px;min-height:84px;border-radius:12px;border:none;width:100%;
+  background:var(--steel);color:var(--steel-ink);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.load span{font-size:14px;font-weight:400;opacity:.85}
+.load .main{font-size:26px;line-height:1.3}
+.load ruby rt{color:inherit;opacity:.8}
+.load:active{transform:translateY(1px)}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.btn{font:inherit;font-size:15px;min-height:44px;padding:0 14px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+.btn.danger{color:var(--stop);border-color:var(--stop)}
+
+.status{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.big{font-family:var(--f-num);font-weight:700;font-size:44px;line-height:1;font-variant-numeric:tabular-nums}
+.ev{border-radius:8px;padding:12px;background:var(--warn-bg);border-left:6px solid var(--warn);display:flex;flex-direction:column;gap:4px}
+.ev.due{background:var(--stop);color:var(--stop-ink);border-left-color:var(--stop-ink)}
+.ev .what{font-weight:700;font-size:17px}
+.ev .left{font-family:var(--f-num);font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.ev .eta{font-size:13px;opacity:.85}
+.none{color:var(--muted);font-size:15px}
+
+.hist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;max-height:220px;overflow:auto}
+.hist li{display:flex;justify-content:space-between;gap:10px;font-variant-numeric:tabular-nums;padding:6px 8px;border-radius:6px;background:var(--chip)}
+.hist li .n{font-family:var(--f-num);font-weight:700;min-width:2.5em}
+.hist li.chg{outline:2px solid var(--warn)}
+
+details summary{cursor:pointer;font-weight:700;min-height:32px}
+.grid2{display:grid;grid-template-columns:1fr 92px;gap:8px 10px;align-items:center;margin-top:8px}
+.grid2 input{font:inherit;font-size:18px;min-height:40px;width:100%;text-align:center;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.how{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px}
+.note{font-size:13px;color:var(--muted)}
+
+/* full-screen alarm */
+.alarm{position:fixed;inset:0;background:var(--stop);color:var(--stop-ink);z-index:10;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:18px;text-align:center;
+  padding:calc(24px + env(safe-area-inset-top,0px)) max(20px,env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) max(20px,env(safe-area-inset-left,0px))}
+.alarm h2{font-family:var(--f-num);font-size:64px;line-height:1;margin:0;letter-spacing:.04em}
+.alarm p{font-size:22px;font-weight:700;margin:0;max-width:24ch}
+.alarm .okbtn{font:inherit;font-weight:700;font-size:26px;min-height:80px;min-width:240px;border-radius:14px;border:4px solid var(--stop-ink);background:transparent;color:var(--stop-ink);cursor:pointer}
+@media (prefers-reduced-motion: no-preference){.alarm{animation:flash 1s steps(2,end) infinite}}
+@keyframes flash{50%{filter:brightness(.75)}}
+.confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:14px}
+.sched-head,.sched li{display:grid;grid-template-columns:3.6em 1fr 4.2em 4.6em;gap:8px;align-items:center}
+.sched-head{font-size:12px;color:var(--muted);padding:0 8px}
+.sched{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.sched li{padding:8px;border-radius:6px;background:var(--chip);font-variant-numeric:tabular-nums}
+.sched li .n{font-family:var(--f-num);font-weight:700}
+.sched li .eta{font-family:var(--f-num);font-weight:700;font-size:20px}
+.sched li .rem{font-size:14px;text-align:right}
+.sched li .tag{font-size:11px;color:var(--muted);display:block}
+.sched li.next{background:var(--steel);color:var(--steel-ink)}
+.sched li.next .tag{color:inherit;opacity:.8}
+.sched li.past{opacity:.55}
+.kinds{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+@media (max-width:460px){.kinds{grid-template-columns:repeat(2,1fr)}}
+.kind{font:inherit;font-weight:700;font-size:15px;min-height:54px;border-radius:8px;border:2px solid var(--line);background:var(--chip);color:var(--ink);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.2}
+.kind small{font-weight:400;font-size:11px;opacity:.8}
+.kind[aria-pressed="true"]{background:var(--steel);border-color:var(--steel);color:var(--steel-ink)}
+.kind[aria-pressed="true"]:not([data-k="p"]){background:var(--warn);border-color:var(--warn);color:#fff}
+.kind:focus-visible{outline:3px solid var(--warn);outline-offset:2px}
+.tbl-wrap{overflow-x:auto}
+table.days{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;font-size:15px}
+table.days th{font-size:12px;color:var(--muted);font-weight:700;padding:4px 6px;text-align:right;white-space:nowrap}
+table.days th:first-child,table.days td:first-child{text-align:left}
+table.days td{padding:7px 6px;text-align:right;border-top:1px solid var(--line)}
+table.days td:last-child{font-weight:700}
+table.days tr.today td{background:var(--chip);font-weight:700}
+table.days tfoot td{border-top:2px solid var(--ink);font-weight:700}
+.seq{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.seq label{font-weight:700;font-size:16px}
+.stepper{display:flex;align-items:center;gap:6px}
+.stepper .step{min-width:48px;min-height:52px;font-size:24px;font-weight:700;padding:0}
+#seqNo,#boards{font-family:var(--f-num);font-weight:700;font-size:32px;width:96px;min-height:52px;text-align:center;border-radius:8px;border:2px solid var(--steel);background:var(--bg);color:var(--ink);font-variant-numeric:tabular-nums}
+#seqNo:focus-visible,#boards:focus-visible{outline:3px solid var(--warn);outline-offset:2px}
+</style>
+<style>body{margin:0}[hidden]{display:none!important}</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>P5P2 停止アラーム<small>Stop alarm</small></h1>
+    <div class="clock" id="clock">--:--</div>
+  </header>
+
+  <section class="panel" aria-labelledby="c-l">
+    <div class="label" id="c-l">今（いま）積（つ）んだハンガーの加工条件（かこうじょうけん） / Condition of the hanger you load now</div>
+    <div class="conds" id="conds">
+      <button class="cond" id="c0" data-c="P5 9分">P5 9分</button>
+      <button class="cond" id="c1" data-c="P5 6分">P5 6分</button>
+      <button class="cond" id="c3" data-c="P5 5分">P5 5分</button>
+      <button class="cond" id="c2" data-c="P2 5分">P2 5分</button>
+    </div>
+    <div class="label">ハンガーの<ruby>中身<rt>なかみ</rt></ruby> What is on this set</div>
+    <div class="kinds" id="kinds">
+      <button class="kind" data-k="p">製品<small>Product</small></button>
+      <button class="kind" data-k="t">テスト板<small>Test</small></button>
+      <button class="kind" data-k="d">ダミー板<small>Dummy</small></button>
+      <button class="kind" data-k="e">空ハンガー<small>Empty</small></button>
+    </div>
+    <div class="seq">
+      <label for="seqNo"><ruby>通<rt>とお</rt></ruby>し<ruby>番号<rt>ばんごう</rt></ruby><br><span class="note">No. of the set you register now (tap to change)</span></label>
+      <div class="stepper">
+        <button class="btn step" id="seqMinus" aria-label="minus 1">−</button>
+        <input id="seqNo" type="number" min="0" max="9999" inputmode="numeric">
+        <button class="btn step" id="seqPlus" aria-label="plus 1">＋</button>
+      </div>
+    </div>
+    <div class="seq" id="boardsRow">
+      <label for="boards"><ruby>本数<rt>ほんすう</rt></ruby><br><span class="note">Boards on this set (front + rear)</span></label>
+      <div class="stepper">
+        <button class="btn step" id="bMinus" aria-label="minus 1">−</button>
+        <input id="boards" type="number" min="0" max="99" inputmode="numeric">
+        <button class="btn step" id="bPlus" aria-label="plus 1">＋</button>
+      </div>
+    </div>
+    <button class="load" id="loadBtn">
+      <div class="main"><ruby>登録<rt>とうろく</rt></ruby>した　＋1</div>
+      <span>Tap once for every hanger set you register</span>
+    </button>
+    <div class="row">
+      <button class="btn" id="undoBtn">1つ取（と）り消（け）す Undo</button>
+      <button class="btn" id="testBtn">音（おと）のテスト Test sound</button>
+      <button class="btn" id="wakeBtn">画面（がめん）をつけたまま Keep screen on</button>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="s-l">
+    <div class="status"><span class="label" id="s-l">サイクル数 Cycles</span><span class="big" id="count">0</span><span class="note" id="lastCond"></span></div>
+    <div id="events"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="e-l">
+    <div class="label" id="e-l">エッチング<ruby>予定<rt>よてい</rt></ruby> Etching schedule — <ruby>取出<rt>とりだ</rt></ruby>し times</div>
+    <div class="sched-head"><span>No.</span><span>条件 Cond.</span><span>取出し Out</span><span>あと Left</span></div>
+    <ul class="sched" id="sched"></ul>
+    <p class="note">確定 = the set that pushes it out is already registered. 予想 = estimate from the cycle times. Same rule as the P5P2 app.</p>
+  </section>
+
+  <section class="panel" aria-labelledby="b-l">
+    <div class="label" id="b-l"><ruby>本数<rt>ほんすう</rt></ruby><ruby>合計<rt>ごうけい</rt></ruby>（<ruby>直<rt>ちょく</rt></ruby>ごと） Boards per shift</div>
+    <div class="tbl-wrap">
+      <table class="days">
+        <thead><tr><th>直</th><th>P5 9分</th><th>P5 6分</th><th>P5 5分</th><th>P2</th><th>合計</th></tr></thead>
+        <tbody id="shiftBody"></tbody>
+      </table>
+    </div>
+    <p class="note" id="shiftNote"></p>
+  </section>
+
+  <section class="panel" aria-labelledby="d-l">
+    <div class="label" id="d-l"><ruby>投入<rt>とうにゅう</rt></ruby>サイクル<ruby>内訳<rt>うちわけ</rt></ruby>（回） Cycles per work day</div>
+    <div class="tbl-wrap">
+      <table class="days">
+        <thead><tr><th>日付</th><th>製品</th><th>テスト板</th><th>ダミー板</th><th>空ハンガー</th><th>合計</th></tr></thead>
+        <tbody id="daysBody"></tbody>
+        <tfoot id="daysFoot"></tfoot>
+      </table>
+    </div>
+    <p class="note" id="dayNote"></p>
+  </section>
+
+  <section class="panel" aria-labelledby="h-l">
+    <div class="label" id="h-l">履歴（りれき） History (newest first)</div>
+    <ul class="hist" id="hist"></ul>
+    <div id="resetArea" class="row"><button class="btn danger" id="resetBtn" data-act="ask">全部（ぜんぶ）リセット Reset all</button></div>
+  </section>
+
+  <section class="panel">
+    <details>
+      <summary>設定（せってい） Settings</summary>
+      <div class="grid2">
+        <label for="sTimer">半田（はんだ）タイマー停止（ていし）サイクル<br><span class="note">Tin timer: stop at cycle</span></label><input id="sTimer" type="number" min="1" max="20" inputmode="numeric">
+        <label for="sSel">選択（せんたく）スイッチ停止サイクル<br><span class="note">Selector P5/P2: stop at cycle</span></label><input id="sSel" type="number" min="1" max="20" inputmode="numeric">
+        <label for="s9">P5 9分 1サイクル（秒） <span class="note">sec</span></label><input id="s9" type="number" min="60" max="1200" inputmode="numeric">
+        <label for="s6">P5 6分 1サイクル（秒） <span class="note">sec</span></label><input id="s6" type="number" min="60" max="1200" inputmode="numeric">
+        <label for="s5p">P5 5分 1サイクル（秒） <span class="note">sec</span></label><input id="s5p" type="number" min="60" max="1200" inputmode="numeric">
+        <label for="s5">P2 5分 1サイクル（秒） <span class="note">sec</span></label><input id="s5" type="number" min="60" max="1200" inputmode="numeric">
+        <label for="sCyc">P5 取出しまでのサイクル<br><span class="note">P5: cycles from load to unload</span></label><input id="sCyc" type="number" min="1" max="30" inputmode="numeric">
+        <label for="sP2b">P2 銅（どう）槽（そう）に入るまで<br><span class="note">P2: cycles until copper bath</span></label><input id="sP2b" type="number" min="0" max="30" inputmode="numeric">
+        <label for="sCu">P2 銅めっき時間（分）<br><span class="note">P2: copper time (min)</span></label><input id="sCu" type="number" min="0" max="300" inputmode="numeric">
+        <label for="sP2a">P2 銅の後 取出しまで<br><span class="note">P2: cycles after copper</span></label><input id="sP2a" type="number" min="0" max="30" inputmode="numeric">
+        <label for="sDay">1日の始まり（勤務日）<br><span class="note">Work day starts at</span></label><input id="sDay" type="time">
+        <label for="sShift2">2直の始まり<br><span class="note">Night shift (2直) starts at</span></label><input id="sShift2" type="time">
+        <label for="sTr">取出し → エッチング（分）<br><span class="note">Unload to etching (min)</span></label><input id="sTr" type="number" min="0" max="120" inputmode="numeric">
+      </div>
+      <p class="note">The hanger whose condition changed is cycle 1. Same rule as the P5P2 app: tin timer stop at cycle 4, selector stop at cycle 3.</p>
+    </details>
+    <details>
+      <summary>使（つか）い方（かた） How to use</summary>
+      <ol class="how">
+        <li>Choose the condition of the hanger you are loading. Set the 通し番号 to the line's number once (type it, or use − / ＋); it goes up by 1 on every tap.</li>
+        <li>Choose what is on the set (製品 / テスト板 / ダミー板 / 空ハンガー) and, for 製品, the 本数 (boards on front + rear). Each time you register a hanger set, tap <b>登録した ＋1</b>. The daily table counts it.</li>
+        <li>When the condition changes (9分 / 6分 / 5分, P5⇄P2) the page counts down. At the stop cycle the screen turns red, beeps and vibrates until you tap <b>確認 OK</b>.</li>
+      </ol>
+      <p class="note">Tap "Test sound" once after opening the page, so the phone allows sound. Keep the volume up. Ask your 班長 before using a phone on the line.</p>
+    </details>
+  </section>
+</div>
+
+<div class="alarm" id="alarm" hidden role="alertdialog" aria-labelledby="a-h" aria-describedby="a-p">
+  <h2 id="a-h">停止 STOP</h2>
+  <p id="a-p"></p>
+  <button class="okbtn" id="okBtn">確認（かくにん） OK</button>
+</div>
+
+<script>
+(function(){
+  const KEY = "p5p2-stop-alarm-v1";
+  const DEF = {cond:"P5 9分", kind:"p", days:{}, boards:4, shifts:{}, next:1, loads:[], done:[], set:{dayStart:"08:10", shift2:"20:10", timer:4, sel:3, s9:570, s6:390, s5p:330, s5:330, cyc:7, p2b:3, cu:48, p2a:5, tr:0}};
+  let st = load();
+  function load(){
+    try{ const v = JSON.parse(localStorage.getItem(KEY)); if(v && Array.isArray(v.loads)) return Object.assign(structuredClone(DEF), v, {set:Object.assign({}, DEF.set, v.set||{})}); }catch(e){}
+    return structuredClone(DEF);
+  }
+  function save(){ try{ localStorage.setItem(KEY, JSON.stringify(st)); }catch(e){} }
+
+  const $ = id => document.getElementById(id);
+  const prog = c => c.split(" ")[0];
+  const tin  = c => prog(c) === "P2" ? "5分" : c.split(" ")[1];
+  const secOf = c => c === "P5 9分" ? st.set.s9 : c === "P5 6分" ? st.set.s6 : c === "P5 5分" ? st.set.s5p : st.set.s5;
+  const hm = d => d.toTimeString().slice(0,5);
+
+  // change-overs, same rule as the app: the changed load is cycle 1
+  function events(){
+    const out = [], L = st.loads;
+    // only sets with products decide the condition (same as the app);
+    // every set (empty, dummy, test too) counts as a cycle
+    const real = []; L.forEach((l, i) => { if((l.k || "p") === "p") real.push(i); });
+    for(let r = 1; r < real.length; r++){
+      const i = real[r], a = L[real[r-1]].c, b = L[i].c, now = L.length - i;
+      const seq = L[i].seq;
+      if(prog(a) !== prog(b)) out.push({key:"sel:"+L[i].id, kind:"sel", old:prog(a), nw:prog(b), now, seq, stop:st.set.sel});
+      if(tin(a) !== tin(b))   out.push({key:"tin:"+L[i].id, kind:"tin", old:tin(a), nw:tin(b), now, seq, stop:st.set.timer});
+    }
+    return out.filter(e => !st.done.includes(e.key) && e.now <= e.stop + 2);
+  }
+  // work day: before the day start (08:10) belongs to the day before
+  function workDay(t){
+    const [h, m] = String(st.set.dayStart || "08:10").split(":").map(Number);
+    const d = new Date(t); if(d.getHours() * 60 + d.getMinutes() < h * 60 + (m || 0)) d.setDate(d.getDate() - 1);
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+  function tally(t, k, n){
+    const key = workDay(t); const row = st.days[key] || (st.days[key] = {p:0, t:0, d:0, e:0});
+    row[k] = Math.max(0, (row[k] || 0) + n);
+  }
+  // shift: 1直 from the day start (08:10) to 2直 start (20:10), else 2直 of that work day
+  const minsOf = hhmm => { const [h, m] = String(hhmm).split(":").map(Number); return h * 60 + (m || 0); };
+  function shiftKey(t){
+    const d = new Date(t), m = d.getHours() * 60 + d.getMinutes();
+    const a = minsOf(st.set.dayStart), b = minsOf(st.set.shift2);
+    return workDay(t) + ((m >= a && m < b) ? "|1" : "|2");
+  }
+  const condKey = c => c === "P2 5分" ? "P2" : c;
+  function addBoards(t, c, n){
+    const key = shiftKey(t), row = st.shifts[key] || (st.shifts[key] = {"P5 9分":0, "P5 6分":0, "P5 5分":0, "P2":0});
+    const k = condKey(c); row[k] = Math.max(0, (row[k] || 0) + n);
+  }
+  function renderShifts(){
+    const cur = shiftKey(Date.now()), body = $("shiftBody"); body.innerHTML = "";
+    const keys = Object.keys(st.shifts).sort((x, y) => x < y ? 1 : -1).slice(0, 20);
+    if(!keys.length){ body.innerHTML = '<tr><td colspan="6" class="note" style="text-align:left">No boards yet. Set 本数 and tap 登録した for a 製品 set.</td></tr>'; }
+    keys.forEach(k => {
+      const r = st.shifts[k], [day, sh] = k.split("|"), tr = document.createElement("tr");
+      if(k === cur) tr.className = "today";
+      const tot = r["P5 9分"] + r["P5 6分"] + r["P5 5分"] + r["P2"];
+      [Number(day.slice(5, 7)) + "/" + Number(day.slice(8)) + " " + sh + "直", r["P5 9分"], r["P5 6分"], r["P5 5分"], r["P2"], tot]
+        .forEach(v => { const td = document.createElement("td"); td.textContent = v; tr.appendChild(td); });
+      body.appendChild(tr);
+    });
+    $("shiftNote").textContent = "1直 " + st.set.dayStart + "–" + st.set.shift2 + " / 2直 " + st.set.shift2 + "–" + st.set.dayStart + ". 製品 sets only (テスト板・ダミー板・空ハンガー are not counted). P5 合計 = P5 9分 + P5 6分 + P5 5分.";
+  }
+  function renderDays(){
+    const today = workDay(Date.now()), month = today.slice(0, 7);
+    const keys = Object.keys(st.days).sort().reverse().slice(0, 31);
+    const body = $("daysBody"), foot = $("daysFoot"); body.innerHTML = ""; foot.innerHTML = "";
+    const sum = {p:0, t:0, d:0, e:0};
+    if(!keys.length){ body.innerHTML = '<tr><td colspan="6" class="note" style="text-align:left">No sets registered yet. Each tap on 登録した is counted here by type.</td></tr>'; }
+    keys.forEach(k => {
+      const r = st.days[k], tot = r.p + r.t + r.d + r.e, tr = document.createElement("tr");
+      if(k === today) tr.className = "today";
+      if(k.slice(0, 7) === month){ sum.p += r.p; sum.t += r.t; sum.d += r.d; sum.e += r.e; }
+      [Number(k.slice(5, 7)) + "/" + Number(k.slice(8)), r.p, r.t, r.d, r.e, tot].forEach(v => { const td = document.createElement("td"); td.textContent = v; tr.appendChild(td); });
+      body.appendChild(tr);
+    });
+    if(keys.length){
+      const tr = document.createElement("tr");
+      [Number(month.slice(5)) + "月 計", sum.p, sum.t, sum.d, sum.e, sum.p + sum.t + sum.d + sum.e].forEach(v => { const td = document.createElement("td"); td.textContent = v; tr.appendChild(td); });
+      foot.appendChild(tr);
+    }
+    $("dayNote").textContent = "勤務日 = " + st.set.dayStart + " から翌 " + st.set.dayStart + " まで (a work day runs from " + st.set.dayStart + "). 合計 = 製品 + テスト板 + ダミー板 + 空ハンガー.";
+  }
+
+  // etching schedule, same rule as the app's schedule():
+  // the line is first-in first-out; load i comes out when load i+cycles is
+  // registered. Cycle length is set by the hanger entering tin (4 loads earlier).
+  function schedule(now){
+    const L = st.loads, n = L.length; if(!n) return [];
+    const lag = st.set.timer, lastT = L[n-1].t;
+    const cycSec = j => { let g = j - lag; g = g < 0 ? 0 : g >= n ? n - 1 : g; return secOf(L[g].c); };
+    const timeOf = idx => {
+      if(idx < n) return {t: L[idx].t, known: true};
+      let t = lastT, first = 0;
+      for(let j = n; j <= idx; j++){ const s = cycSec(j) * 1000; if(!first) first = s; t += s; }
+      const late = now - (lastT + first); if(late > 0) t += late;   // line stopped: never in the past
+      return {t, known: false};
+    };
+    const tr = st.set.tr * 60000;
+    return L.map((l, i) => {
+      let r;
+      if(prog(l.c) === "P2"){
+        const into = timeOf(i + st.set.p2b).t + st.set.cu * 60000;
+        r = {t: into + st.set.p2a * cycSec(n) * 1000, known: false};
+      } else r = timeOf(i + st.set.cyc);
+      return {seq: l.seq, i, c: l.c, eta: r.t + tr, known: r.known};
+    });
+  }
+  function renderSched(){
+    const now = Date.now(), ul = $("sched"); ul.innerHTML = "";
+    const rows = schedule(now).filter(r => r.eta >= now - 15*60000).sort((a,b) => a.eta - b.eta).slice(0, 10);
+    if(!rows.length){ const li = document.createElement("li"); li.innerHTML = "<span class='note' style='grid-column:1/-1'>No hangers in the line yet. Register a set to see its unload time.</span>"; ul.appendChild(li); return; }
+    let nextDone = false;
+    rows.forEach(r => {
+      const li = document.createElement("li"), mins = Math.round((r.eta - now) / 60000);
+      if(r.eta < now) li.className = "past"; else if(!nextDone){ li.className = "next"; nextDone = true; }
+      li.innerHTML = '<span class="n"></span><span class="c"></span><span class="eta"></span><span class="rem"></span>';
+      li.querySelector(".n").textContent = (typeof r.seq === "number") ? "No." + r.seq : "#" + (r.i + 1);
+      li.querySelector(".c").textContent = r.c;
+      li.querySelector(".eta").innerHTML = hm(new Date(r.eta)) + '<span class="tag">' + (r.known ? "確定 fixed" : "予想 est.") + '</span>';
+      li.querySelector(".rem").textContent = r.eta < now ? "取出済? out" : mins <= 0 ? "今 now" : mins + "分";
+      ul.appendChild(li);
+    });
+  }
+  function what(e){
+    return e.kind === "tin"
+      ? `半田タイマー ${e.old} → ${e.nw}　Tin timer`
+      : `選択スイッチ ${e.old} → ${e.nw}　Selector switch`;
+  }
+
+  function render(){
+    document.querySelectorAll(".cond").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.c === st.cond)));
+    $("count").textContent = st.loads.length;
+    const last = st.loads[st.loads.length-1];
+    $("lastCond").textContent = last ? `最後 last: ${last.c}  ${hm(new Date(last.t))}` : "まだ登録なし  No loads yet";
+    const evs = events(), box = $("events");
+    box.innerHTML = "";
+    if(!evs.length){
+      const p = document.createElement("div"); p.className = "none";
+      p.textContent = "変更なし。条件が変わるとここにカウントダウンが出ます。  No change-over. A countdown appears here when the condition changes.";
+      box.appendChild(p);
+    }
+    evs.forEach(e => {
+      const d = document.createElement("div"); const left = e.stop - e.now;
+      d.className = "ev" + (left <= 0 ? " due" : "");
+      const stopNo = (typeof e.seq === "number") ? `通し番号 No. ${e.seq + e.stop - 1}` : `${e.stop}サイクル目 cycle ${e.stop}`;
+      let eta = "";
+      if(left > 0 && last){ const t = new Date(last.t + left * secOf(last.c) * 1000); eta = `${stopNo} で停止 stop  ・  目安（めやす） about ${hm(t)}`; }
+      d.innerHTML = `<div class="what"></div><div class="left"></div><div class="eta"></div>`;
+      d.querySelector(".what").textContent = what(e);
+      d.querySelector(".left").textContent = left > 0 ? `あと ${left} サイクル` : "今すぐ停止！ STOP NOW";
+      d.querySelector(".eta").textContent = left > 0 ? eta : `${stopNo} — 止めて変更して確認OK  stop, change it, tap OK`;
+      if(left <= 0){ const b = document.createElement("button"); b.className = "btn"; b.textContent = "確認 OK"; b.style.alignSelf = "start"; b.onclick = () => { st.done.push(e.key); save(); render(); }; d.appendChild(b); }
+      box.appendChild(d);
+    });
+    const ul = $("hist"); ul.innerHTML = "";
+    st.loads.slice().reverse().slice(0, 40).forEach((l, k) => {
+      const i = st.loads.length - k, li = document.createElement("li");
+      const prev = st.loads[i-2]; if(prev && prev.c !== l.c) li.className = "chg";
+      li.innerHTML = `<span class="n"></span><span class="c"></span><span class="t"></span>`;
+      li.querySelector(".n").textContent = (typeof l.seq === "number") ? "No." + l.seq : "#" + i; li.querySelector(".c").textContent = (({t:"テスト板", d:"ダミー板", e:"空ハンガー"})[l.k] || l.c) + (l.b ? "  " + l.b + "本" : ""); li.querySelector(".t").textContent = hm(new Date(l.t));
+      ul.appendChild(li);
+    });
+    if(!st.loads.length){ const li = document.createElement("li"); li.innerHTML = "<span class='note'>No hangers registered yet. Choose a condition and tap 登録した.</span>"; ul.appendChild(li); }
+    ["timer","sel","s9","s6","s5p","s5"].forEach(k => { const el = $({timer:"sTimer", sel:"sSel", s9:"s9", s6:"s6", s5p:"s5p", s5:"s5"}[k]); if(document.activeElement !== el) el.value = st.set[k]; });
+    if(document.activeElement !== $("seqNo")) $("seqNo").value = st.next;
+    [["sCyc","cyc"],["sP2b","p2b"],["sCu","cu"],["sP2a","p2a"],["sTr","tr"]].forEach(([id,k]) => { if(document.activeElement !== $(id)) $(id).value = st.set[k]; });
+    renderSched();
+    renderDays();
+    renderShifts();
+    $("boardsRow").style.opacity = st.kind === "p" ? "1" : ".45";
+    if(document.activeElement !== $("boards")) $("boards").value = st.boards;
+    if(document.activeElement !== $("sShift2")) $("sShift2").value = st.set.shift2;
+    document.querySelectorAll(".kind").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.k === st.kind)));
+    if(document.activeElement !== $("sDay")) $("sDay").value = st.set.dayStart;
+  }
+
+  // ---- sound + vibration -------------------------------------------------
+  let ac = null, beepTimer = null, buzz = null;
+  function ctx(){ try{ ac = ac || new (window.AudioContext || window.webkitAudioContext)(); if(ac.state === "suspended") ac.resume(); }catch(e){} return ac; }
+  function tone(f, ms, at){
+    const a = ctx(); if(!a) return;
+    const o = a.createOscillator(), g = a.createGain(); const t0 = a.currentTime + (at||0);
+    o.type = "square"; o.frequency.value = f; g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.4, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + ms/1000);
+    o.connect(g).connect(a.destination); o.start(t0); o.stop(t0 + ms/1000 + 0.05);
+  }
+  function vib(p){ try{ navigator.vibrate && navigator.vibrate(p); }catch(e){} }
+  function startAlarm(list){
+    $("a-p").textContent = list.map(what).join(" / ") + "　— 止めて変更 Stop the line and change it";
+    $("alarm").hidden = false;
+    const ring = () => { tone(880, 300, 0); tone(660, 300, 0.35); vib([400,150,400]); };
+    ring(); clearInterval(beepTimer); beepTimer = setInterval(ring, 900);
+    $("okBtn").focus();
+    $("okBtn").onclick = () => { list.forEach(e => st.done.push(e.key)); save(); stopAlarm(); render(); };
+  }
+  function stopAlarm(){ clearInterval(beepTimer); beepTimer = null; vib(0); $("alarm").hidden = true; }
+
+  // ---- actions -----------------------------------------------------------
+  $("conds").addEventListener("click", ev => { const b = ev.target.closest(".cond"); if(!b) return; st.cond = b.dataset.c; save(); render(); });
+  $("loadBtn").addEventListener("click", () => {
+    ctx();
+    const now0 = Date.now();
+    const b = st.kind === "p" ? (st.boards || 0) : 0;
+    st.loads.push({id: now0, c: st.cond, t: now0, seq: st.next, k: st.kind, b});
+    if(b) addBoards(now0, st.cond, b);
+    tally(now0, st.kind, 1);
+    st.next = st.next + 1;
+    if(st.loads.length > 400) st.loads = st.loads.slice(-400);
+    save(); render();
+    const due = events().filter(e => e.now === e.stop);
+    if(due.length) startAlarm(due); else { tone(1800, 70, 0); vib(40); }
+  });
+  $("kinds").addEventListener("click", ev => { const b = ev.target.closest(".kind"); if(!b) return; st.kind = b.dataset.k; save(); render(); });
+  function setBoards(v){ v = parseInt(v, 10); if(Number.isFinite(v) && v >= 0 && v <= 99){ st.boards = v; save(); } render(); }
+  $("boards").addEventListener("change", () => setBoards($("boards").value));
+  $("boards").addEventListener("keydown", ev => { if(ev.key === "Enter"){ setBoards($("boards").value); $("boards").blur(); } });
+  $("bMinus").addEventListener("click", () => setBoards(Math.max(0, st.boards - 1)));
+  $("bPlus").addEventListener("click", () => setBoards(st.boards + 1));
+  $("sShift2").addEventListener("change", () => { if(/^\d{1,2}:\d{2}$/.test($("sShift2").value)){ st.set.shift2 = $("sShift2").value; save(); } render(); });
+  $("sDay").addEventListener("change", () => { if(/^\d{1,2}:\d{2}$/.test($("sDay").value)){ st.set.dayStart = $("sDay").value; save(); } render(); });
+  $("undoBtn").addEventListener("click", () => { const l = st.loads.pop(); if(l && typeof l.seq === "number") st.next = l.seq; if(l) tally(l.t, l.k || "p", -1); if(l && l.b) addBoards(l.t, l.c, -l.b); save(); render(); });
+  // 通し番号: editable, − / ＋ for quick fixes
+  function setNext(v){ v = parseInt(v, 10); if(Number.isFinite(v) && v >= 0){ st.next = v; save(); } render(); }
+  $("seqNo").addEventListener("change", () => setNext($("seqNo").value));
+  $("seqNo").addEventListener("keydown", ev => { if(ev.key === "Enter"){ setNext($("seqNo").value); $("seqNo").blur(); } });
+  $("seqMinus").addEventListener("click", () => setNext(Math.max(0, st.next - 1)));
+  $("seqPlus").addEventListener("click", () => setNext(st.next + 1));
+  $("testBtn").addEventListener("click", () => { tone(880, 300, 0); tone(660, 300, 0.35); vib([300,100,300]); });
+  let lock = null;
+  $("wakeBtn").addEventListener("click", async () => {
+    try{ lock = await navigator.wakeLock.request("screen"); $("wakeBtn").textContent = "画面オン中 Screen stays on"; }
+    catch(e){ $("wakeBtn").textContent = "この端末では不可 Not available here"; }
+  });
+  document.addEventListener("visibilitychange", async () => { if(lock && document.visibilityState === "visible"){ try{ lock = await navigator.wakeLock.request("screen"); }catch(e){} } });
+
+  // reset with an in-page confirm (browser confirm() is not available here)
+  $("resetArea").addEventListener("click", ev => {
+    const area = $("resetArea"), act = ev.target.dataset.act;
+    if(act === "ask"){
+      area.innerHTML = '<div class="confirm"><span>サイクルを全部消しますか？（表は残ります） Clear all cycles? The tables stay.</span>' +
+        '<button class="btn danger" data-act="yes">はい Yes</button><button class="btn" data-act="no">いいえ No</button></div>';
+    } else if(act === "yes" || act === "no"){
+      if(act === "yes"){ st.loads = []; st.done = []; save(); render(); }
+      area.innerHTML = '<button class="btn danger" id="resetBtn" data-act="ask">全部（ぜんぶ）リセット Reset all</button>';
+    }
+  });
+  [["sTimer","timer"],["sSel","sel"],["s9","s9"],["s6","s6"],["s5p","s5p"],["s5","s5"],["sCyc","cyc"],["sP2b","p2b"],["sCu","cu"],["sP2a","p2a"],["sTr","tr"]].forEach(([id,k]) => {
+    $(id).addEventListener("change", () => { const v = parseInt($(id).value, 10); if(v >= 0 && !(k in {timer:1,sel:1,cyc:1,s9:1,s6:1,s5p:1,s5:1} && v === 0)){ st.set[k] = v; save(); render(); } else $(id).value = st.set[k]; });
+  });
+
+  setInterval(() => { $("clock").textContent = hm(new Date()); }, 1000);
+  setInterval(renderSched, 30000);
+  $("clock").textContent = hm(new Date());
+  render();
+})();
+</script>
+
+<script>
+  // make the app work offline after the first visit
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => {}); });
+  }
+</script>
+</body>
+</html>
